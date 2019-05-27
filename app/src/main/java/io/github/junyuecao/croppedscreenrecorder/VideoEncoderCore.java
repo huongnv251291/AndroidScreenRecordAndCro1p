@@ -116,14 +116,14 @@ public class VideoEncoderCore {
         mVBufferInfo = new MediaCodec.BufferInfo();
         mABufferInfo = new MediaCodec.BufferInfo();
 
-        MediaFormat videoFormat = MediaFormat.createVideoFormat(VIDEO_MIME_TYPE, 480, 854);
+        MediaFormat videoFormat = MediaFormat.createVideoFormat(VIDEO_MIME_TYPE, width, height);
 
         // Set some properties.  Failing to specify some of these can cause the MediaCodec
         // configure() call to throw an unhelpful exception.
         videoFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT,
                 MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
-        videoFormat.setInteger(MediaFormat.KEY_BIT_RATE, 6000000);
-        videoFormat.setInteger(MediaFormat.KEY_FRAME_RATE, 25);
+        videoFormat.setInteger(MediaFormat.KEY_BIT_RATE, 12000000);
+        videoFormat.setInteger(MediaFormat.KEY_FRAME_RATE, 60);
         videoFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, IFRAME_INTERVAL);
         if (VERBOSE) {
             Log.d(TAG, "videoFormat: " + videoFormat);

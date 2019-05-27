@@ -67,9 +67,9 @@ public class ScreenCapture {
         mRecorder = new TextureMovieEncoder();
         float screenWidth = Utils.getScreenWidth(context);
         float screenHeight = Utils.getRealHeight(context);
-        width = 1080;
+        width = 720;
         // calculate height with screen ratio
-        height = 1920;
+        height = 1496;
     }
 
     public RecordCallback getRecordCallback() {

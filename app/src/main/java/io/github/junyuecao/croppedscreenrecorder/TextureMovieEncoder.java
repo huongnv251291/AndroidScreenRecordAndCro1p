@@ -82,7 +82,7 @@ public class TextureMovieEncoder implements Runnable, SurfaceTexture.OnFrameAvai
     // ----- accessed exclusively by encoder thread -----
     private WindowSurface mInputWindowSurface;
     private EglCore mEglCore;
-    private FullFrameRect mFullScreen;
+    private MainFrameRect mFullScreen;
     private int mTextureId;
     private int mFrameNum;
     private VideoEncoderCore mVideoEncoder;
@@ -428,7 +428,7 @@ public class TextureMovieEncoder implements Runnable, SurfaceTexture.OnFrameAvai
         mInputWindowSurface.makeCurrent();
 
         // Create new programs and such for the new context.
-        mFullScreen = new FullFrameRect(new Texture2dProgram(Texture2dProgram.ProgramType.TEXTURE_EXT));
+        mFullScreen = new MainFrameRect(new Texture2dProgram(Texture2dProgram.ProgramType.TEXTURE_EXT));
 //        mFullScreen.setTopCropped(mTopCropped);
 //        mFullScreen.setBottomCropped(mBottomCropped);
     }
@@ -456,7 +456,7 @@ public class TextureMovieEncoder implements Runnable, SurfaceTexture.OnFrameAvai
         mInputWindowSurface = new WindowSurface(mEglCore, mVideoEncoder.getInputSurface(), true);
         mInputWindowSurface.makeCurrent();
 
-        mFullScreen = new FullFrameRect(
+        mFullScreen = new MainFrameRect(
                 new Texture2dProgram(Texture2dProgram.ProgramType.TEXTURE_EXT));
 //        mFullScreen.setTopCropped(config.mTopCropped);
 //        mFullScreen.setBottomCropped(config.mBottomCropped);

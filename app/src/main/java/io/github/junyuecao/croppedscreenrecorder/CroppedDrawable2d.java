@@ -17,7 +17,7 @@ public class CroppedDrawable2d extends Drawable2d {
 
     private FloatBuffer mTweakedTexCoordArray;
     private float mTopCropped = 0.0f;
-    private float mBottomCropped = 1.0f;
+    private float mBottomCropped = 0.0f;
     private boolean mRecalculate;
 
     /**

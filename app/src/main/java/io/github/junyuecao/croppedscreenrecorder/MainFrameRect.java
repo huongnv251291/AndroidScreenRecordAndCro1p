@@ -87,6 +87,7 @@ public class MainFrameRect {
      */
     public void setTopCropped(float topCropped) {
         mRectDrawable.setTopCropped(topCropped);
+
     }
 
     /**
