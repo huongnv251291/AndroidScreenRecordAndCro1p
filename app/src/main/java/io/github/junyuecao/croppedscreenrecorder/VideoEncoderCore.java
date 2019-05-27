@@ -57,11 +57,17 @@ public class VideoEncoderCore {
     public static final int MAX_INPUT_SIZE = 65536;
     private static final String VIDEO_MIME_TYPE = MediaFormat.MIMETYPE_VIDEO_AVC;    // H.264 Advanced Video Coding
     private static final String AUDIO_MIME_TYPE = MediaFormat.MIMETYPE_AUDIO_AAC;
-    /** fps */
-    private static final int FRAME_RATE = 24;
-    /** 5 seconds between I-frames */
+    /**
+     * fps
+     */
+    private static final int FRAME_RATE = 60;
+    /**
+     * 5 seconds between I-frames
+     */
     private static final int IFRAME_INTERVAL = 5;
-    /** Save path */
+    /**
+     * Save path
+     */
     private final String mPath;
 
     private Surface mInputSurface;
@@ -98,6 +104,8 @@ public class VideoEncoderCore {
             mMainHandler.post(mRecordProgressChangeRunnable);
         }
     };
+    public long offsetPTSUs;
+    private long prevOutputPTSUs;
 
     /**
      * Configures encoder and muxer state, and prepares the input Surface.
@@ -108,14 +116,14 @@ public class VideoEncoderCore {
         mVBufferInfo = new MediaCodec.BufferInfo();
         mABufferInfo = new MediaCodec.BufferInfo();
 
-        MediaFormat videoFormat = MediaFormat.createVideoFormat(VIDEO_MIME_TYPE, width, height);
+        MediaFormat videoFormat = MediaFormat.createVideoFormat(VIDEO_MIME_TYPE, 480, 854);
 
         // Set some properties.  Failing to specify some of these can cause the MediaCodec
         // configure() call to throw an unhelpful exception.
         videoFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT,
                 MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
-        videoFormat.setInteger(MediaFormat.KEY_BIT_RATE, bitRate);
-        videoFormat.setInteger(MediaFormat.KEY_FRAME_RATE, FRAME_RATE);
+        videoFormat.setInteger(MediaFormat.KEY_BIT_RATE, 6000000);
+        videoFormat.setInteger(MediaFormat.KEY_FRAME_RATE, 25);
         videoFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, IFRAME_INTERVAL);
         if (VERBOSE) {
             Log.d(TAG, "videoFormat: " + videoFormat);
@@ -272,6 +280,24 @@ public class VideoEncoderCore {
         }
     }
 
+    protected long getPTSUs() {
+        long result;
+        result = System.nanoTime() / 1000L - offsetPTSUs;
+        // presentationTimeUs should be monotonic
+        // otherwise muxer fail to write
+        if (result < prevOutputPTSUs)
+            result = (prevOutputPTSUs - result) + result;
+        return result;
+    }
+    protected long getPTSUsAv() {
+        long result;
+        result = System.nanoTime() / 1000L - offsetPTSUsAD;
+        // presentationTimeUs should be monotonic
+        // otherwise muxer fail to write
+        if (result < prevOutputPTSUsAD)
+            result = (prevOutputPTSUsAD - result) + result;
+        return result;
+    }
     private void drainVideo(boolean endOfStream) {
         while (true) {
             int encoderStatus = mVideoEncoder.dequeueOutputBuffer(mVBufferInfo, TIMEOUT_USEC);
@@ -329,12 +355,13 @@ public class VideoEncoderCore {
                         // adjust the ByteBuffer values to match BufferInfo (not needed?)
                         encodedData.position(mVBufferInfo.offset);
                         encodedData.limit(mVBufferInfo.offset + mVBufferInfo.size);
-
+                        mVBufferInfo.presentationTimeUs = getPTSUs();
                         mMuxer.writeSampleData(mVTrackIndex, encodedData, mVBufferInfo);
                         if (VERBOSE) {
                             Log.d(TAG, "sent " + mVBufferInfo.size + " video bytes to muxer, ts=" +
                                     mVBufferInfo.presentationTimeUs);
                         }
+                        prevOutputPTSUs = mVBufferInfo.presentationTimeUs;
                     }
 
                     mVideoEncoder.releaseOutputBuffer(encoderStatus, false);
@@ -422,6 +449,10 @@ public class VideoEncoderCore {
         }
     }
 
+    public long prevOutputPTSUsAD = 0;
+
+    public long offsetPTSUsAD = 0;
+
     /**
      * Enqueue the audio frame buffers to the encoder
      *
@@ -449,14 +480,14 @@ public class VideoEncoderCore {
                 in.limit(size);
                 buffer.position(0);
                 buffer.limit(size);
-                if (VERBOSE) {
-                    Log.d(TAG, "enqueueAudioFrame: "
-                            + "buffer [pos:" + buffer.position() + ", limit: " + buffer.limit() + "]"
-                            + "in [pos:" + in.position() + ", capacity: " + in.capacity() + "]");
-                }
+                Log.d(TAG, "enqueueAudioFrame: "
+                        + "buffer [pos:" + buffer.position() + ", limit: " + buffer.limit() + "]"
+                        + "in [pos:" + in.position() + ", capacity: " + in.capacity() + "]");
                 in.put(buffer); // Here we should ensure that `size` is smaller than the capacity of the `in` buffer
                 int flag = endOfStream ? MediaCodec.BUFFER_FLAG_END_OF_STREAM : 0;
+                presentTimeUs = getPTSUsAv();
                 mAudioEncoder.queueInputBuffer(index, 0, size, presentTimeUs, flag);
+                prevOutputPTSUsAD = presentTimeUs;
                 done = true; // Done passing the input to the codec, but still check for available output below
             } else if (index == MediaCodec.INFO_TRY_AGAIN_LATER) {
                 // if input buffers are full try to drain them

@@ -28,7 +28,9 @@ import android.support.annotation.NonNull;
 import android.support.annotation.RequiresApi;
 import android.util.Log;
 import android.view.Surface;
+
 import io.github.junyuecao.croppedscreenrecorder.gles.EglCore;
+import io.github.junyuecao.croppedscreenrecorder.gles.FullFrameRect;
 import io.github.junyuecao.croppedscreenrecorder.gles.Texture2dProgram;
 import io.github.junyuecao.croppedscreenrecorder.gles.WindowSurface;
 
@@ -36,6 +38,8 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.nio.ByteBuffer;
+
+import static io.github.junyuecao.croppedscreenrecorder.BuildConfig.DEBUG;
 
 
 /**
@@ -78,7 +82,7 @@ public class TextureMovieEncoder implements Runnable, SurfaceTexture.OnFrameAvai
     // ----- accessed exclusively by encoder thread -----
     private WindowSurface mInputWindowSurface;
     private EglCore mEglCore;
-    private MainFrameRect mFullScreen;
+    private FullFrameRect mFullScreen;
     private int mTextureId;
     private int mFrameNum;
     private VideoEncoderCore mVideoEncoder;
@@ -111,6 +115,8 @@ public class TextureMovieEncoder implements Runnable, SurfaceTexture.OnFrameAvai
     private int mVideoWidth;
     private int mVideoHeight;
     private File mCoverImageFile;
+    public boolean mRequestPause;
+    private long mLastPausedTimeUs;
 
     public Callback getCallback() {
         return mCallback;
@@ -130,7 +136,7 @@ public class TextureMovieEncoder implements Runnable, SurfaceTexture.OnFrameAvai
      */
     public void startRecording(EncoderConfig config) {
         Log.d(TAG, "Encoder: startRecording()");
-        synchronized(mReadyFence) {
+        synchronized (mReadyFence) {
             if (mRunning) {
                 Log.w(TAG, "Encoder thread already running");
                 return;
@@ -159,14 +165,14 @@ public class TextureMovieEncoder implements Runnable, SurfaceTexture.OnFrameAvai
      * has completed).
      */
     public void stopRecording() {
-        synchronized(mReadyFence) {
+        synchronized (mReadyFence) {
             if (!mReady) {
                 return;
             }
         }
 
         mHandler.removeCallbacks(mUpdate);
-        synchronized(this) {
+        synchronized (this) {
             mHandler.sendMessage(mHandler.obtainMessage(MSG_STOP_RECORDING));
             mHandler.sendMessage(mHandler.obtainMessage(MSG_QUIT));
         }
@@ -178,7 +184,7 @@ public class TextureMovieEncoder implements Runnable, SurfaceTexture.OnFrameAvai
      * Returns true if recording has been started.
      */
     public boolean isRecording() {
-        synchronized(mReadyFence) {
+        synchronized (mReadyFence) {
             return mRunning;
         }
     }
@@ -209,10 +215,11 @@ public class TextureMovieEncoder implements Runnable, SurfaceTexture.OnFrameAvai
      * or have a separate "block if still busy" method that the caller can execute immediately
      * before it calls updateTexImage().  The latter is preferred because we don't want to
      * stall the caller while this thread does work.
+     *
      * @param timestamp present timestamp in nanosecond
      */
     public void frameAvailable(SurfaceTexture st, long timestamp) {
-        synchronized(mReadyFence) {
+        synchronized (mReadyFence) {
             if (!mReady) {
                 return;
             }
@@ -237,7 +244,7 @@ public class TextureMovieEncoder implements Runnable, SurfaceTexture.OnFrameAvai
     }
 
     public void audioFrameAvailable(ByteBuffer buffer, int size, boolean endOfStream) {
-        synchronized(mReadyFence) {
+        synchronized (mReadyFence) {
             if (!mReady) {
                 return;
             }
@@ -254,7 +261,7 @@ public class TextureMovieEncoder implements Runnable, SurfaceTexture.OnFrameAvai
      * TODO: do something less clumsy
      */
     public void setTextureId(int id) {
-        synchronized(mReadyFence) {
+        synchronized (mReadyFence) {
             if (!mReady) {
                 return;
             }
@@ -266,13 +273,13 @@ public class TextureMovieEncoder implements Runnable, SurfaceTexture.OnFrameAvai
      * Encoder thread entry point.  Establishes Looper/Handler and waits for messages.
      * <p>
      *
-     * @see Thread#run()
+//     * @see Thread#run()
      */
     @Override
     public void run() {
         // Establish a Looper for this thread, and define a Handler for it.
         Looper.prepare();
-        synchronized(mReadyFence) {
+        synchronized (mReadyFence) {
             mHandler = new EncoderHandler(this);
             mReady = true;
             mReadyFence.notify();
@@ -280,7 +287,7 @@ public class TextureMovieEncoder implements Runnable, SurfaceTexture.OnFrameAvai
         Looper.loop();
 
         Log.d(TAG, "Encoder thread exiting");
-        synchronized(mReadyFence) {
+        synchronized (mReadyFence) {
             mReady = mRunning = false;
             mHandler = null;
         }
@@ -317,12 +324,13 @@ public class TextureMovieEncoder implements Runnable, SurfaceTexture.OnFrameAvai
         if (VERBOSE) {
             Log.d(TAG, "handleFrameAvailable tr=" + transform);
         }
-
+        Log.e("handleFrameAvailable", "" + mRequestPause);
         mVideoEncoder.drainEncoder(false);
+        mInputWindowSurface.makeCurrent();
         mFullScreen.drawFrame(mTextureId, transform);
 
-        if (BuildConfig.DEBUG) {
-            drawBox(mFrameNum++);
+        if (DEBUG) {
+            drawBox(mFrameNum);
         }
 
         // used for save a frame
@@ -332,6 +340,30 @@ public class TextureMovieEncoder implements Runnable, SurfaceTexture.OnFrameAvai
         mInputWindowSurface.swapBuffers();
     }
 
+    void pauseRecording() {
+        if (DEBUG) Log.v(TAG, "pauseRecording");
+        synchronized (mReadyFence) {
+            if (!isRecording()) {
+                return;
+            }
+            mRequestPause = true;
+            mLastPausedTimeUs = System.nanoTime() / 1000;
+            mReadyFence.notifyAll();
+        }
+    }
+
+    void resumeRecording() {
+        if (DEBUG) Log.v(TAG, "resumeRecording");
+        synchronized (mReadyFence) {
+            if (!isRecording()) {
+                return;
+            }
+            mVideoEncoder.offsetPTSUs = System.nanoTime() / 1000 - mLastPausedTimeUs;
+            mVideoEncoder.offsetPTSUsAD = System.nanoTime() / 1000 - mLastPausedTimeUs;
+            mRequestPause = false;
+            mReadyFence.notifyAll();
+        }
+    }
     // private void saveFirstFrame() {
     //     if (mFirstFrameSaved) {
     //         return;
@@ -350,7 +382,6 @@ public class TextureMovieEncoder implements Runnable, SurfaceTexture.OnFrameAvai
     // }
 
     /**
-     *
      * @param mp4 get screenshot file
      * @return screenshot file
      */
@@ -397,9 +428,9 @@ public class TextureMovieEncoder implements Runnable, SurfaceTexture.OnFrameAvai
         mInputWindowSurface.makeCurrent();
 
         // Create new programs and such for the new context.
-        mFullScreen = new MainFrameRect(new Texture2dProgram(Texture2dProgram.ProgramType.TEXTURE_EXT));
-        mFullScreen.setTopCropped(mTopCropped);
-        mFullScreen.setBottomCropped(mBottomCropped);
+        mFullScreen = new FullFrameRect(new Texture2dProgram(Texture2dProgram.ProgramType.TEXTURE_EXT));
+//        mFullScreen.setTopCropped(mTopCropped);
+//        mFullScreen.setBottomCropped(mBottomCropped);
     }
 
     private void handleAudioFrameAvailable(boolean endOfStream) {
@@ -425,10 +456,10 @@ public class TextureMovieEncoder implements Runnable, SurfaceTexture.OnFrameAvai
         mInputWindowSurface = new WindowSurface(mEglCore, mVideoEncoder.getInputSurface(), true);
         mInputWindowSurface.makeCurrent();
 
-        mFullScreen = new MainFrameRect(
+        mFullScreen = new FullFrameRect(
                 new Texture2dProgram(Texture2dProgram.ProgramType.TEXTURE_EXT));
-        mFullScreen.setTopCropped(config.mTopCropped);
-        mFullScreen.setBottomCropped(config.mBottomCropped);
+//        mFullScreen.setTopCropped(config.mTopCropped);
+//        mFullScreen.setBottomCropped(config.mBottomCropped);
 
         mTextureId = mFullScreen.createTextureObject();
 
@@ -451,9 +482,15 @@ public class TextureMovieEncoder implements Runnable, SurfaceTexture.OnFrameAvai
 
     @Override
     public void onFrameAvailable(SurfaceTexture surfaceTexture) {
+        Log.e("onFrameAvailable", "" + mRequestPause);
         mHandler.postDelayed(mUpdate, 16);
+        if (!mRequestPause) {
+            frameAvailable(surfaceTexture);
+        } else {
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
+            GLES20.glFlush();
+        }
 
-        frameAvailable(surfaceTexture);
     }
 
     private void releaseEncoder() {
@@ -502,6 +539,7 @@ public class TextureMovieEncoder implements Runnable, SurfaceTexture.OnFrameAvai
     public interface Callback {
         /**
          * called when surface prepared
+         *
          * @param surface a prepared surface
          */
         void onInputSurfacePrepared(Surface surface);
@@ -579,6 +617,7 @@ public class TextureMovieEncoder implements Runnable, SurfaceTexture.OnFrameAvai
                 case MSG_FRAME_AVAILABLE:
                     long timestamp = (((long) inputMessage.arg1) << 32) |
                             (((long) inputMessage.arg2) & 0xffffffffL);
+                    Log.e("MSG_FRAME_AVAILABLE", timestamp + "");
                     encoder.handleFrameAvailable((float[]) obj, timestamp);
                     break;
                 case MSG_SET_TEXTURE_ID:

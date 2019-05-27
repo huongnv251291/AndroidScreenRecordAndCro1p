@@ -46,9 +46,9 @@ public class ScreenCapture {
     private final int mScreenDensity;
     private MediaProjectionManager projectionManager;
     private TextureMovieEncoder mRecorder;
-    private int width = 360; // Width of the recorded video
-    private int height = 640; // Height of the recorded video
-    private int mBitRate = 1 * 1024 * 1024; //
+    private int width = 720; // Width of the recorded video
+    private int height = 1280; // Height of the recorded video
+    private int mBitRate = 12000000; //
 
     private boolean running; // true if it is projecting screen
     private boolean recording; // true if it is recording screen
@@ -67,9 +67,9 @@ public class ScreenCapture {
         mRecorder = new TextureMovieEncoder();
         float screenWidth = Utils.getScreenWidth(context);
         float screenHeight = Utils.getRealHeight(context);
-        width = 360;
+        width = 1080;
         // calculate height with screen ratio
-        height = (int) (width * (screenHeight / screenWidth));
+        height = 1920;
     }
 
     public RecordCallback getRecordCallback() {
@@ -116,7 +116,6 @@ public class ScreenCapture {
      * Step 2，Init MediaProjection
      *
      * @param data data returned from onActivityResult
-     *
      * @return true if success
      */
     public boolean startProjection(Intent data) {
@@ -141,7 +140,7 @@ public class ScreenCapture {
      */
     public synchronized boolean attachRecorder() {
         Log.d(TAG, "Start attachRecorder");
-        if (!running ) {
+        if (!running) {
             // if not projecting screen or already recording return false
             requestScreenCapture();
             return false;
@@ -151,7 +150,7 @@ public class ScreenCapture {
         }
         EGLContext eglContext = EGL14.eglGetCurrentContext();
         File file = getFile();
-        float cropTop = ((float) Utils.getStatusBarHeight(mActivity.get())) /  Utils.getRealHeight(mActivity.get());
+        float cropTop = ((float) Utils.getStatusBarHeight(mActivity.get())) / Utils.getRealHeight(mActivity.get());
         float cropBottom = ((float) Utils.getNavBarHeight(mActivity.get())) / Utils.getRealHeight(mActivity.get());
         mRecorder.startRecording(new TextureMovieEncoder.EncoderConfig(file,
                 width, height,
@@ -260,6 +259,24 @@ public class ScreenCapture {
         return file;
     }
 
+    public void pause() {
+        if (!mRecorder.mRequestPause)
+            mRecorder.pauseRecording();
+
+    }
+
+    public void resume() {
+        if (mRecorder.mRequestPause)
+            mRecorder.resumeRecording();
+    }
+
+    public boolean isPause() {
+        if (mRecorder == null) {
+            throw new NullPointerException("must init first");
+        }
+        return mRecorder.mRequestPause;
+    }
+
     public interface OnMediaProjectionReadyListener {
         void onMediaProjectionReady(MediaProjection mediaProjection);
     }
@@ -291,7 +308,8 @@ public class ScreenCapture {
         @Override
         public void run() {
             while (!mAudioLoopExited) {
-                enqueueAudioFrame(false);
+                if (!mRecorder.mRequestPause)
+                    enqueueAudioFrame(false);
             }
 
             enqueueAudioFrame(true);

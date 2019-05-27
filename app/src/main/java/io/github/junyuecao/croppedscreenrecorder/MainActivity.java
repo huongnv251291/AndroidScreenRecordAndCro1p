@@ -16,6 +16,7 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+
 import permissions.dispatcher.NeedsPermission;
 import permissions.dispatcher.OnNeverAskAgain;
 import permissions.dispatcher.OnPermissionDenied;
@@ -37,6 +38,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private LinearLayout mRecordLayout;
     private Button mRecord;
     private Button mCancel;
+    private Button pause;
 
     @Override
     public void onClick(View v) {
@@ -107,7 +109,32 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
         mStart.setOnClickListener(this);
         mCancel.setOnClickListener(this);
-        mRecord.setOnTouchListener(this);
+//        mRecord.setOnTouchListener(this);
+        pause = (Button) findViewById(R.id.pause);
+        pause.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (mScreenCapture.isPause()) {
+                    pause.setText("pause");
+                    mScreenCapture.resume();
+                } else {
+                    pause.setText("resume");
+                    mScreenCapture.pause();
+                }
+            }
+        });
+        mRecord.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!mScreenCapture.isRecording()) {
+                    mScreenCapture.attachRecorder();
+                    mRecord.setText("Recording");
+                } else {
+                    mScreenCapture.detachRecorder();
+                    mRecord.setText("Start");
+                }
+            }
+        });
     }
 
     @Override
